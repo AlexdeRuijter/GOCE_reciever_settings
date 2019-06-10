@@ -9,4 +9,5 @@ https://earth.esa.int/web/guest/missions/esa-operational-eo-missions/goce
 
 Beware, prepare a bit of space to unpack, the final size of the files equals around 15 GB.
 
-Anyway, short samples on the data are included in the github, to test the code.
+Anyway, short samples on the data are included in the github, to test the code. These can be replaced with their respective
+files if downloaded for the program to run.

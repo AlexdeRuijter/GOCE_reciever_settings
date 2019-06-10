@@ -88,6 +88,7 @@ class GPSfile:
         You should always count your losses. To chain days together, one can use the prevAtt and noPrev attributes
         :yield: [Timestamp, [Losses in L1], [Losses in L2]]
         """
+        secondidx = 0
 
         # If there is no previous day passed down, it is every day for himself, so we need some empty variables:
         if not inheritance:
@@ -134,22 +135,26 @@ class GPSfile:
                         # and if we want to start a new loss, append it to reserve[key].
                         begin, end = losses[L][key]
                         
+
                         # is there an error for this PRN?
                         if key in TrackLoss[L]:
+
                             # Is the losstracker started?
                             if not begin:
+                                
                                 # No? Then start it:
-                                losses[L][key][0] = idx
+                                losses[L][key] = [idx, 0]
+                                
                             
                             # It is started:
                             else:
-                                
+
                                 # Is the first loss finished yet?
                                 if end:
 
                                     # If so check whether there is a reserve loss running:
                                     if reserve[L][key]:
-                                    
+                                   
                                         # If that is the case, check whether the last reserve is finished yet:
                                         if reserve[L][key][-1][1]:
                                             
@@ -170,7 +175,15 @@ class GPSfile:
                                 # If the first error is still running, do nothing:
                                 else:
                                     pass
+                
+                for K in range(2):
+                    for key, loss in losses[K].items():
+                        if loss[0] > loss[1] and loss[1]:
+                            #print(loss, idx, secondidx, key, L)
+                            pass
 
+                        if not loss[0] and loss[1]:
+                            pass
 
                 ## Now check for each key whether there is an end to the loss.
                 # If there is a previous loss to compare with:
@@ -184,9 +197,15 @@ class GPSfile:
 
                         # If the key is in contact with the SAT and not leaving this round:
                         if key in setPRNs and key not in leavers:
+                        
+                            if losses[L][key][0] == 0 and losses[L][key][1] > 3000:
+                                # Something has gone haywire
+                                print(key, "has gone haywire!", idx)
+                                losses[0][key] = [0,0]
 
                             # If there is a end to the next loss:
-                            if losses[L][key][1]:
+                            elif losses[L][key][1]:
+                                #print(losses[L][key], reserve[L][key])
                                 
                                 # Then the last reserve loss must be closed.
                                 reserve[L][key][-1][1] = idx - 1
@@ -223,7 +242,7 @@ class GPSfile:
             toYield.append(loss)
 
             # Set all the knowledge of previous values to zero!
-            prevtime, previdx, time, idx = 0, 0, 0, 0
+            prevtime, previdx, time, secondidx = 0, 0, 0, 0
 
 
             ## Yield all the losses that can be yielded:
@@ -233,18 +252,18 @@ class GPSfile:
             while condition and len(toYield):
 
                 # This will filter out all the time-doubles, if some may occur between switching dates.
-                while prevtime == time and idx == previdx:
-                    time, idx = toYield.popleft()
+                while prevtime == time and secondidx == previdx:
+                    time, secondidx = toYield.popleft()
 
                 # Save the time and index so we can use it for comparison next time in this while-loop.
-                prevtime, previdx = time, idx
+                prevtime, previdx = time, secondidx
 
                 # This tuple will contain the errors to be yielded.
                 Errors = ([], []) # L1, L2
                 
                 # The checking of ends of losses should happen for both the bands:
                 for L in range(2):
-
+                    
                     # Refresh the losses if possible:
                     for key in losses[L].keys():
 
@@ -252,7 +271,7 @@ class GPSfile:
                         begin, end = losses[L][key]
 
                         # If the loss has an end, and the current index is bigger or equal to that end  plus one:
-                        if idx >= end + 1 and end:
+                        if secondidx >= end + 1 and end:
                             
                             # Collect the loss for funny metrics!
                             self.All[L][key].append(losses[L][key])
@@ -275,6 +294,8 @@ class GPSfile:
                             #print(key, end = "")
                     #print()
 
+                    yield losses[L], idx
+
                     # Now begin checking whether we need to add this to the errors:
                     for key, [begin, end] in lost:
                         # lost is a sorted list on start values.
@@ -284,21 +305,21 @@ class GPSfile:
 
                             # Because it is sorted on start value, if one beginning is higher than the index,
                             # everything after it is too, so we don't have to worry 'bout those PRNs and errors!
-                            if idx < begin:
+                            if secondidx < begin:
                                 break
 
                             # If there is no end to the tracking pass and the index is equal to the beginning
                             # then the tracking pass might, or might not be an expected tracking loss, 
                             # so break the loop and put it back in the toYield-list, until we know more:
-                            elif idx == begin and not end:
+                            elif secondidx == begin and not end:
 
                                 # Break the big old loop:
                                 condition = False
                                 # Put the entry back in to the bag!
-                                toYield.appendleft([time, idx])
+                                toYield.appendleft([time, secondidx])
                             
                             # If there is a valid unexpected tracking loss however:
-                            elif begin <= idx <= end:
+                            elif begin <= secondidx <= end:
                                 
                                 # Append the PRN to the error-list we're about to yield
                                 Errors[L].append(key)
@@ -311,7 +332,7 @@ class GPSfile:
 
                             # Now, if it is not within these options, something must have gone hayware, inform the user:    
                             else:
-                                print(" Something went wrong: {}, {} | idx: {}, PRN: {}".format(begin, end, idx, key))
+                                print(" Something went wrong: {}, {} | idx: {}, PRN: {}".format(begin, end, secondidx, key))
                                 raise ValueError(" Some things slipped past your ultimate scheme! Oh, our villainness!")
 
                 # Now extract the the particular errors we should yield:
@@ -319,7 +340,9 @@ class GPSfile:
 
                 if condition:
                     # Yield the value if possible.
-                    yield [time, L1, L2]
+                    
+                    #yield [time, L1, L2]
+                    pass
 
         ## If we're done cycling through the day, we should do a few last things:
         # Save some variables to the class namespace:
@@ -329,7 +352,7 @@ class GPSfile:
         if toYield:
             self.idx = toYield[-1][1] + 1
         else: 
-            self.idx = idx + 1
+            self.idx = secondidx + 1
         self.Att = Att
         self.last = last
 
@@ -350,6 +373,8 @@ class GPSfile:
             # Second consists of:
             timeStamp, lossL1, lossL2, setPRNs, leavers, joiners, idx = second
 
+            L1, L2 = {str(i) for i in lossL1}, {str(i) for i in lossL2}
+
             # For the first time, assume PRNs in the PRN_list have just connected:
             if first:
                 first = False
@@ -360,7 +385,7 @@ class GPSfile:
             for key, values in Att.items():
                 if values[0] and not values[1]:
                     # Check whether they are in the lists of losses
-                    if key not in lossL1 and key not in lossL2:
+                    if key not in L1 and key not in L2:
                         Att[key][1] = 1
             
             # Take out the leavers:
@@ -457,10 +482,10 @@ class GPSfile:
                 # Check whether we already have some data from the previous header to parse:
                 # If so, do that before we go on.
                 if secondOfData[0]:
-                    for prn in secondOfData[1]:
-                        if prn not in secondOfData[2]:
+                    for idx, prn in enumerate(secondOfData[1]):
+                        if not secondOfData[2][idx]:
                             self.nonzeroL1 += 1
-                        if prn not in secondOfData[3]:
+                        if not secondOfData[3][idx]:
                             self.nonzeroL2 += 1
 
                     yield secondOfData
@@ -574,12 +599,16 @@ if __name__ == "__main__":
     # target = os.path.abspath(os.path.join("", os.pardir, "Data"))
 
     # Create an object to read the file, and send it where the file is located.
-    day1 = GPSfile("repro.goce2460.13o", path)
+    day1 = GPSfile("repro.goce2450_red.13o", path)
 
-    for second in day1.countLosses():
-        #print(second)
+    for second, idx in day1.countLosses():
+        #for key, loss in second.items():
+        #    print(key, loss, end =" ")
+        #print(idx)
         pass
-    
+    #for second in day1.attendance():
+    #    print(second[1:])
+
     print("Hayday!")
 
     #with open("generatedlosses.txt", "w+") as f:
